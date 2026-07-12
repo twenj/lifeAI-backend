@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
+enum MessageStatus {
+  completed
+  failed
+}
+
+enum ExtractionCategory {
+  note
+  weight
+  food
+  schedule
+  shopping
+  ledger
+  none
+}
+
+enum ShoppingList {
+  short
+  long
+}
+
+enum ExtractionStatus {
+  applied
+  pending
+  ignored
+  failed
+}
+
+enum LedgerType {
+  income
+  expense
+}
+
+enum ScheduleRepeat {
+  none
+  daily
+  weekly
+  monthly
+}
+
+model User {
+  id            String         @id @default(cuid())
+  externalId    String?        @unique
+  shareCode     String?        @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+  notes         Note[]
+  weights       WeightRecord[]
+  foods         FoodRecord[]
+  extractions   AiExtraction[]
+  ledger        LedgerRecord[]
+  foodItems     FoodItem[]
+  schedules     Schedule[]
+  journals      Journal[]
+  shoppingItems ShoppingItem[]
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String    @default("新对话")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String         @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String         @db.LongText
+  images         Json?
+  model          String?
+  status         MessageStatus  @default(completed)
+  createdAt      DateTime       @default(now())
+  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  extractions    AiExtraction[]
+
+  @@index([conversationId, createdAt])
+}
+
+model AiExtraction {
+  id         String             @id @default(cuid())
+  userId     String
+  messageId  String             @unique
+  category   ExtractionCategory
+  confidence Float
+  data       Json
+  status     ExtractionStatus
+  createdAt  DateTime           @default(now())
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message    Message            @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  content   String   @db.LongText
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+model WeightRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  weightKg  Float
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model FoodRecord {
+  id          String    @id @default(cuid())
+  userId      String
+  date        DateTime
+  meal        String
+  description String
+  calories    Float?
+  proteinG    Float?
+  foodItemId  String?
+  amountG     Float?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodItem    FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+}
+
+model LedgerRecord {
+  id          String     @id @default(cuid())
+  userId      String
+  type        LedgerType
+  amount      Float
+  category    String
+  description String?
+  date        DateTime
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model FoodItem {
+  id              String       @id @default(cuid())
+  userId          String
+  name            String
+  servingSizeG    Float?
+  caloriesPer100g Float?
+  proteinGPer100g Float?
+  fatGPer100g     Float?
+  carbsGPer100g   Float?
+  sugarGPer100g   Float?
+  fiberGPer100g   Float?
+  sodiumMgPer100g Float?
+  sourceImage     String?      @db.LongText
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodRecords     FoodRecord[]
+
+  @@index([userId, name])
+}
+
+model Schedule {
+  id              String         @id @default(cuid())
+  userId          String
+  title           String
+  startAt         DateTime
+  endAt           DateTime?
+  notes           String?        @db.Text
+  completed       Boolean        @default(false)
+  repeat          ScheduleRepeat @default(none)
+  reminderMinutes Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startAt])
+}
+
+model Journal {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  title     String
+  content   String   @db.LongText
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model ShoppingItem {
+  id        String       @id @default(cuid())
+  userId    String
+  name      String
+  listType  ShoppingList @default(short)
+  purchased Boolean      @default(false)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, listType, sortOrder])
+  @@index([userId, listType, purchased, updatedAt])
+}
