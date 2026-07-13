@@ -304,14 +304,31 @@ app.register(async (api) => {
     const body = z.object({ images: z.array(z.string()).min(1).max(3), source: z.enum(['jd', 'taobao', 'other']).default('other') }).parse(request.body)
     return parseReceipt(body.images, body.source)
   })
-  api.get('/v1/food-items', async (request) => prisma.foodItem.findMany({ where: { userId: userId(request) }, orderBy: { updatedAt: 'desc' } }))
+  api.get('/v1/food-items', async (request) => prisma.foodItem.findMany({
+    where: { userId: userId(request) },
+    orderBy: { updatedAt: 'desc' },
+    select: {
+      id: true,
+      name: true,
+      servingSizeG: true,
+      caloriesPer100g: true,
+      proteinGPer100g: true,
+      fatGPer100g: true,
+      carbsGPer100g: true,
+      sugarGPer100g: true,
+      fiberGPer100g: true,
+      sodiumMgPer100g: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  }))
   api.post('/v1/food-items', async (request) => {
     const body = z.object({ name: z.string().min(1).max(200), servingSizeG: z.number().positive().nullable().optional(), nutritionPer100g: z.object({ calories: z.number().nullable().optional(), proteinG: z.number().nullable().optional(), fatG: z.number().nullable().optional(), carbsG: z.number().nullable().optional(), sugarG: z.number().nullable().optional(), fiberG: z.number().nullable().optional(), sodiumMg: z.number().nullable().optional() }), sourceImage: z.string().optional() }).parse(request.body)
     const uid = userId(request)
     const name = body.name.trim().replace(/\s+/g, ' ')
     const existing = await prisma.foodItem.findFirst({ where: { userId: uid, name } })
     if (existing) return { ...existing, alreadyExists: true }
-    const created = await prisma.foodItem.create({ data: { userId: uid, name, servingSizeG: body.servingSizeG, caloriesPer100g: body.nutritionPer100g.calories, proteinGPer100g: body.nutritionPer100g.proteinG, fatGPer100g: body.nutritionPer100g.fatG, carbsGPer100g: body.nutritionPer100g.carbsG, sugarGPer100g: body.nutritionPer100g.sugarG, fiberGPer100g: body.nutritionPer100g.fiberG, sodiumMgPer100g: body.nutritionPer100g.sodiumMg, sourceImage: body.sourceImage } })
+    const created = await prisma.foodItem.create({ data: { userId: uid, name, servingSizeG: body.servingSizeG, caloriesPer100g: body.nutritionPer100g.calories, proteinGPer100g: body.nutritionPer100g.proteinG, fatGPer100g: body.nutritionPer100g.fatG, carbsGPer100g: body.nutritionPer100g.carbsG, sugarGPer100g: body.nutritionPer100g.sugarG, fiberGPer100g: body.nutritionPer100g.fiberG, sodiumMgPer100g: body.nutritionPer100g.sodiumMg } })
     return { ...created, alreadyExists: false }
   })
   api.patch('/v1/food-items/:id', async (request, reply) => {
