@@ -1,6 +1,9 @@
 import Fastify from 'fastify'
 import { createRequire } from 'node:module'
 import { randomBytes } from 'node:crypto'
+import { access, mkdir, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import path from 'node:path'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import { z } from 'zod'
@@ -15,6 +18,25 @@ import { refreshJournalForUser, startDailyJournalScheduler, yesterdayKey } from 
 
 const require = createRequire(import.meta.url)
 const prettyLoggerTarget = require.resolve('pino-pretty')
+const uploadDir = path.resolve(process.cwd(), 'uploads')
+await mkdir(uploadDir, { recursive: true })
+
+const saveMessageImages = async (images: string[] | undefined) => {
+  if (!images?.length) return undefined
+  const paths: string[] = []
+  for (const image of images.slice(0, 3)) {
+    const match = image.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/)
+    if (!match) {
+      if (image.startsWith('/v1/uploads/')) paths.push(image)
+      continue
+    }
+    const extension = match[1] === 'jpeg' || match[1] === 'jpg' ? 'jpg' : match[1]
+    const filename = `${Date.now()}-${randomBytes(8).toString('hex')}.${extension}`
+    await writeFile(path.join(uploadDir, filename), match[2], 'base64')
+    paths.push(`/v1/uploads/${filename}`)
+  }
+  return paths.length ? paths : undefined
+}
 
 const app = Fastify({
   bodyLimit: config.BODY_LIMIT_MB * 1024 * 1024,
@@ -35,6 +57,19 @@ await app.register(cors, { origin: config.CORS_ORIGIN === '*' ? true : config.CO
 await app.register(jwt, { secret: config.JWT_SECRET })
 
 app.get('/health', async () => ({ ok: true, service: 'life-ai-backend' }))
+
+app.get('/v1/uploads/:filename', async (request, reply) => {
+  const { filename } = z.object({ filename: z.string().regex(/^[A-Za-z0-9._-]+$/) }).parse(request.params)
+  const filePath = path.join(uploadDir, filename)
+  try {
+    await access(filePath)
+    const extension = path.extname(filename).toLowerCase()
+    const contentType = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+    return reply.type(contentType).send(createReadStream(filePath))
+  } catch {
+    return reply.code(404).send({ error: '图片不存在' })
+  }
+})
 
 app.post('/v1/auth/anonymous', async (request, reply) => {
   const body = z.object({ externalId: z.string().max(200).optional() }).parse(request.body || {})
@@ -107,7 +142,8 @@ app.register(async (api) => {
     if (!conversation) conversation = await prisma.conversation.create({ data: { userId: uid, title: body.messages.find((item) => item.role === 'user')?.content.slice(0, 80) || '新对话' } })
     const input = body.messages.slice(-12) as InputMessage[]
     const last = input[input.length - 1]
-    await prisma.message.create({ data: { conversationId: conversation.id, role: last.role, content: last.content, images: last.images || undefined } })
+    const storedImages = await saveMessageImages(last.images)
+    await prisma.message.create({ data: { conversationId: conversation.id, role: last.role, content: last.content, images: storedImages } })
     try {
       if (/更新|修改|补充|重写/.test(last.content) && /昨天.*日记|日记.*昨天|日记/.test(last.content)) {
         const content = '好的，我会在后台更新昨天的日记，请稍后到日记模块查看。'
