@@ -12,7 +12,7 @@ const envSchema = z.object({
   OPENROUTER_APP_NAME: z.string().min(1),
   CORS_ORIGIN: z.string().default('*'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-  BODY_LIMIT_MB: z.coerce.number().positive().max(50).default(20),
+  BODY_LIMIT_MB: z.coerce.number().positive().max(50).default(40),
 })
 
 export const config = envSchema.parse(process.env)
