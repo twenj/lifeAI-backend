@@ -300,6 +300,26 @@ app.register(async (api) => {
     const body = z.object({ images: z.array(z.string()).min(1).max(3) }).parse(request.body)
     return recognizeFoodLabel(body.images)
   })
+  api.post('/v1/food-label/recognize-and-save', async (request) => {
+    const body = z.object({ images: z.array(z.string()).min(1).max(3), name: z.string().max(100).optional() }).parse(request.body)
+    const uid = userId(request)
+    const work = (async () => {
+      const label = await recognizeFoodLabel(body.images)
+      const name = (body.name?.trim() || label.name || '未命名食品').replace(/\s+/g, ' ').slice(0, 100)
+      const nutrition = label.nutritionPer100g
+      const valid = Number(label.confidence) >= 0.7 && [nutrition.calories, nutrition.proteinG, nutrition.fatG, nutrition.carbsG].some((value) => value != null && Number.isFinite(Number(value)))
+      if (!valid) return { label: { ...label, name }, saved: null }
+      const existing = await prisma.foodItem.findFirst({ where: { userId: uid, name } })
+      if (existing) return { label: { ...label, name }, saved: { ...existing, alreadyExists: true } }
+      const created = await prisma.foodItem.create({ data: { userId: uid, name, servingSizeG: label.servingSizeG, caloriesPer100g: nutrition.calories, proteinGPer100g: nutrition.proteinG, fatGPer100g: nutrition.fatG, carbsGPer100g: nutrition.carbsG, sugarGPer100g: nutrition.sugarG, fiberGPer100g: nutrition.fiberG, sodiumMgPer100g: nutrition.sodiumMg } })
+      return { label: { ...label, name }, saved: { ...created, alreadyExists: false } }
+    })()
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000))
+    const result = await Promise.race([work, timeout])
+    if (result !== null) return result
+    void work.catch((error) => request.log.error({ err: error }, 'food label background save failed'))
+    return { processing: true, content: '图片识别时间较长，已在后台继续处理。请稍后到食物库查看结果。' }
+  })
   api.post('/v1/receipt/parse', async (request) => {
     const body = z.object({ images: z.array(z.string()).min(1).max(3), source: z.enum(['jd', 'taobao', 'other']).default('other') }).parse(request.body)
     return parseReceipt(body.images, body.source)

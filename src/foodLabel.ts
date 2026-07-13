@@ -19,6 +19,22 @@ const labelSchema = z.object({
 
 export type FoodLabel = z.infer<typeof labelSchema>
 
+const normalizeEnergy = (label: FoodLabel): FoodLabel => {
+  const calories = label.nutritionPer100g.calories
+  // 常见食品每 100g 的 kcal 通常不会超过 1000；营养表中的 kJ 数值往往在 1000 以上。
+  // 模型未能区分单位时，按 1 kcal = 4.184 kJ 做一次兜底换算。
+  if (calories != null && calories > 1000) {
+    return {
+      ...label,
+      nutritionPer100g: {
+        ...label.nutritionPer100g,
+        calories: Number((calories / 4.184).toFixed(1)),
+      },
+    }
+  }
+  return label
+}
+
 export async function recognizeFoodLabel(images: string[]): Promise<FoodLabel> {
   if (!config.OPENROUTER_API_KEY) throw new Error('请先配置 OPENROUTER_API_KEY')
   const imageParts = images.filter((value) => value.startsWith('data:image/')).slice(0, 3).map((url) => ({ type: 'image_url', image_url: { url } }))
@@ -46,5 +62,5 @@ export async function recognizeFoodLabel(images: string[]): Promise<FoodLabel> {
   const result = await response.json() as any
   if (!response.ok) throw new Error(result?.error?.message || `图片识别失败（${response.status}）`)
   const text = String(result?.choices?.[0]?.message?.content || '').trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim()
-  return labelSchema.parse(JSON.parse(text))
+  return normalizeEnergy(labelSchema.parse(JSON.parse(text)))
 }
