@@ -11,7 +11,7 @@ import { callModel, type InputMessage } from './model.js'
 import { actionHintForResult, classifyAndPersist, resolveClassifyText, summarizeApplied, tryRuleExtract } from './classify.js'
 import { recognizeFoodLabel } from './foodLabel.js'
 import { parseReceipt } from './receipt.js'
-import { startDailyJournalScheduler } from './journal.js'
+import { refreshJournalForUser, startDailyJournalScheduler, yesterdayKey } from './journal.js'
 
 const require = createRequire(import.meta.url)
 const prettyLoggerTarget = require.resolve('pino-pretty')
@@ -109,6 +109,13 @@ app.register(async (api) => {
     const last = input[input.length - 1]
     await prisma.message.create({ data: { conversationId: conversation.id, role: last.role, content: last.content, images: last.images || undefined } })
     try {
+      if (/更新|修改|补充|重写/.test(last.content) && /昨天.*日记|日记.*昨天|日记/.test(last.content)) {
+        const content = '好的，我会在后台更新昨天的日记，请稍后到日记模块查看。'
+        await prisma.message.create({ data: { conversationId: conversation.id, role: 'assistant', content, model: 'journal-background' } })
+        await prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } })
+        void refreshJournalForUser(uid, yesterdayKey())
+        return { conversationId: conversation.id, content, applied: null, ledgerBatch: null }
+      }
       const classifyText = await resolveClassifyText(conversation.id, last.content)
       const preview = tryRuleExtract(classifyText)
       const content = await callModel(input, actionHintForResult(preview, last.content))

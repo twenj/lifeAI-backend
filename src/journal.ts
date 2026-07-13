@@ -6,7 +6,7 @@ const ZONE = 'Asia/Shanghai'
 const dateKey = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 const rangeFor = (key: string) => ({ start: new Date(`${key}T00:00:00+08:00`), end: new Date(`${key}T00:00:00+08:00`).getTime() + 86400000 })
 const clip = (value: unknown, max = 800) => String(value ?? '').replace(/\s+/g, ' ').slice(0, max)
-const yesterdayKey = () => dateKey(new Date(Date.now() - 86400000))
+export const yesterdayKey = () => dateKey(new Date(Date.now() - 86400000))
 
 async function buildSourceSummary(userId: string, key: string) {
   const range = rangeFor(key)
@@ -30,17 +30,30 @@ async function buildSourceSummary(userId: string, key: string) {
   ].join('\n')
 }
 
+async function generateJournalForUser(userId: string, key: string, force = false) {
+  const date = new Date(`${key}T00:00:00+08:00`)
+  const existing = await prisma.journal.findUnique({ where: { userId_date: { userId, date } } })
+  if (existing && !force) return
+  const summary = await buildSourceSummary(userId, key)
+  const content = await callModel([{ role: 'user', content: `请根据以下${key}的生活记录，写一篇简洁、温暖、真实的中文日记。不要编造没有出现的事实；没有记录的模块可以略过。只返回日记正文，不要标题、Markdown 或解释。\n\n${summary}` }])
+  await prisma.journal.upsert({ where: { userId_date: { userId, date } }, create: { userId, date, title: `${key} 日记`, content: content.trim() }, update: { title: `${key} 日记`, content: content.trim() } })
+}
+
+export async function refreshJournalForUser(userId: string, key = yesterdayKey()) {
+  if (!config.OPENROUTER_API_KEY) return
+  try {
+    await generateJournalForUser(userId, key, true)
+  } catch (error) {
+    console.error(`journal refresh failed for ${userId}`, error)
+  }
+}
+
 export async function generateJournalsForDate(key: string) {
   if (!config.OPENROUTER_API_KEY) return
   const users = await prisma.user.findMany({ select: { id: true } })
   for (const user of users) {
-    const date = new Date(`${key}T00:00:00+08:00`)
-    const existing = await prisma.journal.findUnique({ where: { userId_date: { userId: user.id, date } } })
-    if (existing) continue
     try {
-      const summary = await buildSourceSummary(user.id, key)
-      const content = await callModel([{ role: 'user', content: `请根据以下${key}的生活记录，写一篇简洁、温暖、真实的中文日记。不要编造没有出现的事实；没有记录的模块可以略过。只返回日记正文，不要标题、Markdown 或解释。\n\n${summary}` }])
-      await prisma.journal.create({ data: { userId: user.id, date, title: `${key} 日记`, content: content.trim() } })
+      await generateJournalForUser(user.id, key)
     } catch (error) {
       console.error(`journal generation failed for ${user.id}`, error)
     }
