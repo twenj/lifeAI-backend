@@ -421,6 +421,6 @@ app.register(async (api) => {
 })
 
 app.addHook('onClose', async () => prisma.$disconnect())
-await app.listen({ port: config.PORT, host: '127.0.0.1' })
+await app.listen({ port: config.PORT, host: '0.0.0.0' })
 app.log.info({ port: config.PORT, model: config.OPENROUTER_MODEL, database: 'mysql' }, 'Life AI backend started')
 startDailyJournalScheduler()
