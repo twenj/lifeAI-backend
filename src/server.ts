@@ -16,6 +16,7 @@ import { actionHintForResult, classifyAndPersist, resolveClassifyText, summarize
 import { recognizeFoodLabel } from './foodLabel.js'
 import { parseReceipt } from './receipt.js'
 import { refreshJournalForUser, startDailyJournalScheduler, yesterdayKey } from './journal.js'
+import { ensureRecurringSchedules } from './recurringSchedules.js'
 
 const require = createRequire(import.meta.url)
 const prettyLoggerTarget = require.resolve('pino-pretty')
@@ -479,4 +480,7 @@ app.register(async (api) => {
 app.addHook('onClose', async () => prisma.$disconnect())
 await app.listen({ port: config.PORT, host: '0.0.0.0' })
 app.log.info({ port: config.PORT, model: config.OPENROUTER_MODEL, database: 'mysql' }, '小日子AI backend started')
-startDailyJournalScheduler()
+startDailyJournalScheduler(async () => {
+  await ensureRecurringSchedules()
+})
+void ensureRecurringSchedules().catch((error) => app.log.error({ err: error }, 'initial recurring schedule sync failed'))

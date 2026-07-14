@@ -60,7 +60,7 @@ export async function generateJournalsForDate(key: string) {
   }
 }
 
-export function startDailyJournalScheduler() {
+export function startDailyJournalScheduler(beforeGenerate?: () => Promise<void>) {
   let lastRun = ''
   const tick = async () => {
     const now = new Date()
@@ -68,6 +68,7 @@ export function startDailyJournalScheduler() {
     const today = dateKey(now)
     if (local === '00:00' && lastRun !== today) {
       lastRun = today
+      if (beforeGenerate) await beforeGenerate()
       await generateJournalsForDate(yesterdayKey())
     }
   }
