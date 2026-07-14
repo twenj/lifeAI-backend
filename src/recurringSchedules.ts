@@ -14,6 +14,7 @@ const nextDate = (date: Date, repeat: Repeat) => {
 }
 
 export async function ensureRecurringSchedules() {
+  const now = Date.now()
   const recurring = await prisma.schedule.findMany({ where: { repeat: { not: 'none' } }, orderBy: { startAt: 'asc' } })
   const latestByGroup = new Map<string, (typeof recurring)[number]>()
   for (const item of recurring) {
@@ -24,6 +25,8 @@ export async function ensureRecurringSchedules() {
 
   let created = 0
   for (const latest of latestByGroup.values()) {
+    const reminderAt = latest.startAt.getTime() - (latest.reminderMinutes ?? 0) * 60_000
+    if (reminderAt > now) continue
     const nextStart = nextDate(latest.startAt, latest.repeat as Repeat)
     const exists = await prisma.schedule.findFirst({
       where: {

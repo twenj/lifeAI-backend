@@ -480,7 +480,7 @@ app.register(async (api) => {
 app.addHook('onClose', async () => prisma.$disconnect())
 await app.listen({ port: config.PORT, host: '0.0.0.0' })
 app.log.info({ port: config.PORT, model: config.OPENROUTER_MODEL, database: 'mysql' }, '小日子AI backend started')
-startDailyJournalScheduler(async () => {
-  await ensureRecurringSchedules()
-})
-void ensureRecurringSchedules().catch((error) => app.log.error({ err: error }, 'initial recurring schedule sync failed'))
+startDailyJournalScheduler()
+setInterval(() => {
+  void ensureRecurringSchedules().catch((error) => app.log.error({ err: error }, 'recurring schedule sync failed'))
+}, 60_000)
