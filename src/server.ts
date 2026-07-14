@@ -478,5 +478,5 @@ app.register(async (api) => {
 
 app.addHook('onClose', async () => prisma.$disconnect())
 await app.listen({ port: config.PORT, host: '0.0.0.0' })
-app.log.info({ port: config.PORT, model: config.OPENROUTER_MODEL, database: 'mysql' }, 'Life AI backend started')
+app.log.info({ port: config.PORT, model: config.OPENROUTER_MODEL, database: 'mysql' }, '小日子AI backend started')
 startDailyJournalScheduler()
