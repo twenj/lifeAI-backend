@@ -9,7 +9,7 @@ export type InputMessage = {
 const imageDataUrl = (value: unknown): value is string =>
   typeof value === 'string' && value.startsWith('data:image/')
 
-const SYSTEM_PROMPT = `你是小日子 AI，一个友好、实用的生活助手。请用简洁的中文回答。
+const SYSTEM_PROMPT = `你是拾光AI，一个友好、实用的生活助手。请用简洁的中文回答。
 
 用户可用关键词把内容写入生活模块。若本轮属于这类操作，请简短确认已记录，不要当成闲聊或科普。
 关键词：体重、饮食、记事、日程、购买、收入、支出；带图且含「食物」→ 食物库。

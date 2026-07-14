@@ -46,6 +46,13 @@ const saveMessageImages = async (images: string[] | undefined) => {
   return paths.length ? paths : undefined
 }
 
+const pagination = (query: unknown) => {
+  const value = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(50).default(20) }).parse(query || {})
+  return { ...value, skip: (value.page - 1) * value.pageSize }
+}
+
+const pageResult = <T>(items: T[], total: number, page: number, pageSize: number) => ({ items, total, page, pageSize, hasMore: page * pageSize < total })
+
 const app = Fastify({
   bodyLimit: config.BODY_LIMIT_MB * 1024 * 1024,
   logger: {
@@ -193,7 +200,12 @@ app.register(async (api) => {
     }
   })
 
-  api.get('/v1/notes', async (request) => prisma.note.findMany({ where: { userId: userId(request) }, orderBy: { updatedAt: 'desc' } }))
+  api.get('/v1/notes', async (request) => {
+    const page = pagination(request.query)
+    const where = { userId: userId(request) }
+    const [items, total] = await Promise.all([prisma.note.findMany({ where, orderBy: { updatedAt: 'desc' }, skip: page.skip, take: page.pageSize }), prisma.note.count({ where })])
+    return pageResult(items, total, page.page, page.pageSize)
+  })
   api.post('/v1/notes', async (request) => {
     const body = z.object({ title: z.string().min(1).max(100), content: z.string().max(100000) }).parse(request.body)
     return prisma.note.create({ data: { ...body, userId: userId(request) } })
@@ -211,7 +223,12 @@ app.register(async (api) => {
     return { ok: true }
   })
 
-  api.get('/v1/journals', async (request) => prisma.journal.findMany({ where: { userId: userId(request) }, orderBy: { date: 'desc' }, take: 100 }))
+  api.get('/v1/journals', async (request) => {
+    const page = pagination(request.query)
+    const where = { userId: userId(request) }
+    const [items, total] = await Promise.all([prisma.journal.findMany({ where, orderBy: { date: 'desc' }, skip: page.skip, take: page.pageSize }), prisma.journal.count({ where })])
+    return pageResult(items, total, page.page, page.pageSize)
+  })
   api.patch('/v1/journals/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string() }).parse(request.params)
     const body = z.object({ title: z.string().min(1).max(120).optional(), content: z.string().min(1).max(100000) }).parse(request.body)
@@ -220,7 +237,12 @@ app.register(async (api) => {
     return prisma.journal.update({ where: { id }, data: body })
   })
 
-  api.get('/v1/weight-records', async (request) => prisma.weightRecord.findMany({ where: { userId: userId(request) }, orderBy: { date: 'desc' } }))
+  api.get('/v1/weight-records', async (request) => {
+    const page = pagination(request.query)
+    const where = { userId: userId(request) }
+    const [items, total] = await Promise.all([prisma.weightRecord.findMany({ where, orderBy: { date: 'desc' }, skip: page.skip, take: page.pageSize }), prisma.weightRecord.count({ where })])
+    return pageResult(items, total, page.page, page.pageSize)
+  })
   api.post('/v1/weight-records', async (request) => {
     const body = z.object({ date: z.coerce.date(), weightKg: z.number().positive(), note: z.string().max(500).optional() }).parse(request.body)
     return prisma.weightRecord.create({ data: { userId: userId(request), date: body.date, weightKg: body.weightKg, note: body.note } })
@@ -231,7 +253,12 @@ app.register(async (api) => {
     return { ok: true }
   })
 
-  api.get('/v1/food-records', async (request) => prisma.foodRecord.findMany({ where: { userId: userId(request) }, orderBy: { date: 'desc' } }))
+  api.get('/v1/food-records', async (request) => {
+    const page = pagination(request.query)
+    const where = { userId: userId(request) }
+    const [items, total] = await Promise.all([prisma.foodRecord.findMany({ where, orderBy: { date: 'desc' }, skip: page.skip, take: page.pageSize }), prisma.foodRecord.count({ where })])
+    return pageResult(items, total, page.page, page.pageSize)
+  })
   api.post('/v1/food-records', async (request) => {
     const body = z.object({ date: z.coerce.date(), meal: z.string().min(1).max(40).optional(), description: z.string().min(1).max(1000), calories: z.number().nonnegative().optional(), proteinG: z.number().nonnegative().optional(), foodItemId: z.string().optional(), amountG: z.number().positive().optional() }).parse(request.body)
     let calories = body.calories
@@ -307,18 +334,18 @@ app.register(async (api) => {
     return [...grouped.values()].sort((a, b) => (a.month < b.month ? 1 : -1))
   })
   api.get('/v1/ledger', async (request) => {
-    const query = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }).parse(request.query || {})
+    const query = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }).merge(z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(50).default(20) })).parse(request.query || {})
     const uid = userId(request)
+    const page = { ...query, skip: (query.page - 1) * query.pageSize }
+    let where: { userId: string; date?: { gte: Date; lt: Date } } = { userId: uid }
     if (query.month) {
       const [year, month] = query.month.split('-').map(Number)
       const start = new Date(year, month - 1, 1)
       const end = new Date(year, month, 1)
-      return prisma.ledgerRecord.findMany({
-        where: { userId: uid, date: { gte: start, lt: end } },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      })
+      where = { userId: uid, date: { gte: start, lt: end } }
     }
-    return prisma.ledgerRecord.findMany({ where: { userId: uid }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 500 })
+    const [items, total] = await Promise.all([prisma.ledgerRecord.findMany({ where, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], skip: page.skip, take: page.pageSize }), prisma.ledgerRecord.count({ where })])
+    return pageResult(items, total, page.page, page.pageSize)
   })
   api.post('/v1/ledger', async (request) => {
     const body = z.object({ type: z.enum(['income', 'expense']), amount: z.number().positive(), category: z.string().min(1).max(40), description: z.string().max(500).optional(), date: z.coerce.date() }).parse(request.body)
@@ -334,7 +361,12 @@ app.register(async (api) => {
     return { ok: true }
   })
 
-  api.get('/v1/schedules', async (request) => prisma.schedule.findMany({ where: { userId: userId(request) }, orderBy: { startAt: 'asc' }, take: 200 }))
+  api.get('/v1/schedules', async (request) => {
+    const page = pagination(request.query)
+    const where = { userId: userId(request) }
+    const [items, total] = await Promise.all([prisma.schedule.findMany({ where, orderBy: { startAt: 'asc' }, skip: page.skip, take: page.pageSize }), prisma.schedule.count({ where })])
+    return pageResult(items, total, page.page, page.pageSize)
+  })
   api.post('/v1/schedules', async (request, reply) => {
     const body = z.object({ title: z.string().min(1).max(120), startAt: z.coerce.date(), endAt: z.coerce.date().optional(), notes: z.string().max(2000).optional(), repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).default('none'), reminderMinutes: z.number().int().min(0).nullable().optional() }).parse(request.body)
     if (body.endAt && body.endAt < body.startAt) return reply.code(400).send({ error: '结束时间不能早于开始时间' })
@@ -381,10 +413,10 @@ app.register(async (api) => {
     const body = z.object({ images: z.array(z.string()).min(1).max(3), source: z.enum(['jd', 'taobao', 'other']).default('other') }).parse(request.body)
     return parseReceipt(body.images, body.source)
   })
-  api.get('/v1/food-items', async (request) => prisma.foodItem.findMany({
-    where: { userId: userId(request) },
-    orderBy: { updatedAt: 'desc' },
-    select: {
+  api.get('/v1/food-items', async (request) => {
+    const page = pagination(request.query)
+    const where = { userId: userId(request) }
+    const select = {
       id: true,
       name: true,
       servingSizeG: true,
@@ -397,8 +429,10 @@ app.register(async (api) => {
       sodiumMgPer100g: true,
       createdAt: true,
       updatedAt: true,
-    },
-  }))
+    } as const
+    const [items, total] = await Promise.all([prisma.foodItem.findMany({ where, orderBy: { updatedAt: 'desc' }, skip: page.skip, take: page.pageSize, select }), prisma.foodItem.count({ where })])
+    return pageResult(items, total, page.page, page.pageSize)
+  })
   api.post('/v1/food-items', async (request) => {
     const body = z.object({ name: z.string().min(1).max(200), servingSizeG: z.number().positive().nullable().optional(), nutritionPer100g: z.object({ calories: z.number().nullable().optional(), proteinG: z.number().nullable().optional(), fatG: z.number().nullable().optional(), carbsG: z.number().nullable().optional(), sugarG: z.number().nullable().optional(), fiberG: z.number().nullable().optional(), sodiumMg: z.number().nullable().optional() }), sourceImage: z.string().optional() }).parse(request.body)
     const uid = userId(request)
@@ -479,7 +513,7 @@ app.register(async (api) => {
 
 app.addHook('onClose', async () => prisma.$disconnect())
 await app.listen({ port: config.PORT, host: '0.0.0.0' })
-app.log.info({ port: config.PORT, model: config.OPENROUTER_MODEL, database: 'mysql' }, '小日子AI backend started')
+app.log.info({ port: config.PORT, model: config.OPENROUTER_MODEL, database: 'mysql' }, '拾光AI backend started')
 startDailyJournalScheduler()
 setInterval(() => {
   void ensureRecurringSchedules().catch((error) => app.log.error({ err: error }, 'recurring schedule sync failed'))
