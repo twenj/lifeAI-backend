@@ -6,13 +6,18 @@ const ZONE = 'Asia/Shanghai'
 const dateKey = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 const rangeFor = (key: string) => ({ start: new Date(`${key}T00:00:00+08:00`), end: new Date(`${key}T00:00:00+08:00`).getTime() + 86400000 })
 const clip = (value: unknown, max = 800) => String(value ?? '').replace(/\s+/g, ' ').slice(0, max)
+const listSummary = (value: unknown) => Array.isArray(value) ? value.map((entry) => {
+  if (!entry || typeof entry !== 'object') return ''
+  const row = entry as { text?: unknown; done?: unknown }
+  return `${row.done ? '已完成' : '未完成'}${clip(row.text, 120)}`
+}).filter(Boolean).join('、') : ''
 export const yesterdayKey = () => dateKey(new Date(Date.now() - 86400000))
 
 async function buildSourceSummary(userId: string, key: string) {
   const range = rangeFor(key)
   const [messages, notes, weights, foods, ledger, schedules, foodItems] = await Promise.all([
     prisma.message.findMany({ where: { conversation: { userId }, createdAt: { gte: range.start, lt: new Date(range.end) } }, orderBy: { createdAt: 'asc' }, select: { role: true, content: true } }),
-    prisma.note.findMany({ where: { userId, updatedAt: { gte: range.start, lt: new Date(range.end) } }, select: { title: true, content: true } }),
+    prisma.note.findMany({ where: { userId, updatedAt: { gte: range.start, lt: new Date(range.end) } }, select: { title: true, content: true, type: true, items: true } }),
     prisma.weightRecord.findMany({ where: { userId, updatedAt: { gte: range.start, lt: new Date(range.end) } }, select: { date: true, weightKg: true, note: true } }),
     prisma.foodRecord.findMany({ where: { userId, updatedAt: { gte: range.start, lt: new Date(range.end) } }, select: { date: true, description: true, calories: true, proteinG: true } }),
     prisma.ledgerRecord.findMany({ where: { userId, updatedAt: { gte: range.start, lt: new Date(range.end) } }, select: { type: true, amount: true, category: true, description: true } }),
@@ -21,7 +26,7 @@ async function buildSourceSummary(userId: string, key: string) {
   ])
   return [
     `聊天：${messages.map((item) => `${item.role === 'user' ? '我' : 'AI'}：${clip(item.content, 500)}`).join('；') || '无'}`,
-    `记事本：${notes.map((item) => `${clip(item.title, 80)}：${clip(item.content)}`).join('；') || '无'}`,
+    `记事本：${notes.map((item) => `${clip(item.title, 80)}：${item.type === 'list' ? listSummary(item.items) : clip(item.content)}`).join('；') || '无'}`,
     `体重：${weights.map((item) => `${item.weightKg}kg${item.note ? `（${clip(item.note, 120)}）` : ''}`).join('；') || '无'}`,
     `饮食：${foods.map((item) => `${clip(item.description, 120)} ${item.calories ?? 0}kcal/${item.proteinG ?? 0}g蛋白质`).join('；') || '无'}`,
     `账单：${ledger.map((item) => `${item.type === 'income' ? '收入' : '支出'}${item.amount}元 ${item.category}${item.description ? `（${clip(item.description, 100)}）` : ''}`).join('；') || '无'}`,

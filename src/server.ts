@@ -207,12 +207,12 @@ app.register(async (api) => {
     return pageResult(items, total, page.page, page.pageSize)
   })
   api.post('/v1/notes', async (request) => {
-    const body = z.object({ title: z.string().min(1).max(100), content: z.string().max(100000) }).parse(request.body)
+    const body = z.object({ title: z.string().min(1).max(100), content: z.string().max(100000).default(''), type: z.enum(['text', 'list']).default('text'), items: z.array(z.object({ text: z.string().min(1).max(500), done: z.boolean().default(false) })).max(200).optional() }).parse(request.body)
     return prisma.note.create({ data: { ...body, userId: userId(request) } })
   })
   api.patch('/v1/notes/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string() }).parse(request.params)
-    const body = z.object({ title: z.string().min(1).max(100).optional(), content: z.string().max(100000).optional() }).parse(request.body)
+    const body = z.object({ title: z.string().min(1).max(100).optional(), content: z.string().max(100000).optional(), type: z.enum(['text', 'list']).optional(), items: z.array(z.object({ text: z.string().min(1).max(500), done: z.boolean().default(false) })).max(200).optional() }).parse(request.body)
     const note = await prisma.note.findFirst({ where: { id, userId: userId(request) } })
     if (!note) return reply.code(404).send({ error: '笔记不存在' })
     return prisma.note.update({ where: { id }, data: body })
