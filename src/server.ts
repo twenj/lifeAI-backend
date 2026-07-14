@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { access, mkdir, writeFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import path from 'node:path'
+import sharp from 'sharp'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import { z } from 'zod'
@@ -19,7 +20,10 @@ import { refreshJournalForUser, startDailyJournalScheduler, yesterdayKey } from 
 const require = createRequire(import.meta.url)
 const prettyLoggerTarget = require.resolve('pino-pretty')
 const uploadDir = path.resolve(process.cwd(), 'uploads')
-await mkdir(uploadDir, { recursive: true })
+const originalDir = path.join(uploadDir, 'originals')
+const thumbnailDir = path.join(uploadDir, 'thumbs')
+await mkdir(originalDir, { recursive: true })
+await mkdir(thumbnailDir, { recursive: true })
 
 const saveMessageImages = async (images: string[] | undefined) => {
   if (!images?.length) return undefined
@@ -32,8 +36,11 @@ const saveMessageImages = async (images: string[] | undefined) => {
     }
     const extension = match[1] === 'jpeg' || match[1] === 'jpg' ? 'jpg' : match[1]
     const filename = `${Date.now()}-${randomBytes(8).toString('hex')}.${extension}`
-    await writeFile(path.join(uploadDir, filename), match[2], 'base64')
-    paths.push(`/v1/uploads/${filename}`)
+    const originalPath = path.join(originalDir, filename)
+    const thumbnailPath = path.join(thumbnailDir, filename)
+    await writeFile(originalPath, match[2], 'base64')
+    await sharp(originalPath).resize({ width: 480, height: 480, fit: 'inside', withoutEnlargement: true }).toFile(thumbnailPath)
+    paths.push(`/v1/uploads/thumbs/${filename}`)
   }
   return paths.length ? paths : undefined
 }
@@ -60,7 +67,20 @@ app.get('/health', async () => ({ ok: true, service: 'life-ai-backend' }))
 
 app.get('/v1/uploads/:filename', async (request, reply) => {
   const { filename } = z.object({ filename: z.string().regex(/^[A-Za-z0-9._-]+$/) }).parse(request.params)
-  const filePath = path.join(uploadDir, filename)
+  const filePath = path.join(originalDir, filename)
+  try {
+    await access(filePath)
+    const extension = path.extname(filename).toLowerCase()
+    const contentType = extension === '.png' ? 'image/png' : extension === '.webp' ? 'image/webp' : 'image/jpeg'
+    return reply.type(contentType).send(createReadStream(filePath))
+  } catch {
+    return reply.code(404).send({ error: '图片不存在' })
+  }
+})
+
+app.get('/v1/uploads/:kind/:filename', async (request, reply) => {
+  const { kind, filename } = z.object({ kind: z.enum(['originals', 'thumbs']), filename: z.string().regex(/^[A-Za-z0-9._-]+$/) }).parse(request.params)
+  const filePath = path.join(uploadDir, kind, filename)
   try {
     await access(filePath)
     const extension = path.extname(filename).toLowerCase()
