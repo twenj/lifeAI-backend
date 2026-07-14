@@ -266,7 +266,8 @@ app.register(async (api) => {
     if (body.foodItemId && body.amountG) {
       const food = await prisma.foodItem.findFirst({ where: { id: body.foodItemId, userId: userId(request) } })
       if (food) {
-        const ratio = body.amountG / 100
+        const baseG = food.servingSizeG && food.servingSizeG > 0 ? food.servingSizeG : 100
+        const ratio = body.amountG / baseG
         calories = food.caloriesPer100g == null ? calories : food.caloriesPer100g * ratio
         proteinG = food.proteinGPer100g == null ? proteinG : food.proteinGPer100g * ratio
       }
@@ -291,7 +292,8 @@ app.register(async (api) => {
     if (record.foodItemId && body.amountG !== undefined && nextAmount != null && nextAmount > 0) {
       const food = await prisma.foodItem.findFirst({ where: { id: record.foodItemId, userId: userId(request) } })
       if (food) {
-        const ratio = nextAmount / 100
+        const baseG = food.servingSizeG && food.servingSizeG > 0 ? food.servingSizeG : 100
+        const ratio = nextAmount / baseG
         calories = food.caloriesPer100g == null ? calories : food.caloriesPer100g * ratio
         proteinG = food.proteinGPer100g == null ? proteinG : food.proteinGPer100g * ratio
       }
