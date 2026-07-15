@@ -370,13 +370,14 @@ app.register(async (api) => {
     return pageResult(items, total, page.page, page.pageSize)
   })
   api.post('/v1/schedules', async (request, reply) => {
-    const body = z.object({ title: z.string().min(1).max(120), startAt: z.coerce.date(), endAt: z.coerce.date().optional(), notes: z.string().max(2000).optional(), repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).default('none'), reminderMinutes: z.number().int().min(0).nullable().optional() }).parse(request.body)
+    const body = z.object({ title: z.string().min(1).max(120), startAt: z.coerce.date(), endAt: z.coerce.date().optional(), notes: z.string().max(2000).optional(), repeat: z.enum(['none', 'daily', 'weekly', 'monthly', 'custom']).default('none'), reminderMinutes: z.number().int().min(0).nullable().optional(), customRepeatDays: z.number().int().min(1).nullable().optional() }).parse(request.body)
     if (body.endAt && body.endAt < body.startAt) return reply.code(400).send({ error: '结束时间不能早于开始时间' })
+    if (body.repeat === 'custom' && !body.customRepeatDays) return reply.code(400).send({ error: '自定义重复需要指定重复天数' })
     return prisma.schedule.create({ data: { ...body, userId: userId(request) } })
   })
   api.patch('/v1/schedules/:id', async (request, reply) => {
     const { id } = z.object({ id: z.string() }).parse(request.params)
-    const body = z.object({ title: z.string().min(1).max(120).optional(), startAt: z.coerce.date().optional(), endAt: z.coerce.date().nullable().optional(), notes: z.string().max(2000).optional(), completed: z.boolean().optional(), repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).optional(), reminderMinutes: z.number().int().min(0).nullable().optional() }).parse(request.body)
+    const body = z.object({ title: z.string().min(1).max(120).optional(), startAt: z.coerce.date().optional(), endAt: z.coerce.date().nullable().optional(), notes: z.string().max(2000).optional(), completed: z.boolean().optional(), repeat: z.enum(['none', 'daily', 'weekly', 'monthly', 'custom']).optional(), reminderMinutes: z.number().int().min(0).nullable().optional(), customRepeatDays: z.number().int().min(1).nullable().optional() }).parse(request.body)
     const schedule = await prisma.schedule.findFirst({ where: { id, userId: userId(request) } })
     if (!schedule) return reply.code(404).send({ error: '日程不存在' })
     return prisma.schedule.update({ where: { id }, data: body })

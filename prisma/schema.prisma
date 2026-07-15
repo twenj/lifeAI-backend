@@ -46,6 +46,7 @@ enum LedgerType {
 }
 
 enum ScheduleRepeat {
+  custom
   none
   daily
   weekly
@@ -202,6 +203,7 @@ model Schedule {
   notes           String?        @db.Text
   completed       Boolean        @default(false)
   repeat          ScheduleRepeat @default(none)
+  customRepeatDays Int?
   reminderMinutes Int?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

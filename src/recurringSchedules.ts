@@ -1,15 +1,16 @@
 import { prisma } from './db.js'
 
-type Repeat = 'daily' | 'weekly' | 'monthly'
+type Repeat = 'daily' | 'weekly' | 'monthly' | 'custom'
 
-const groupKey = (item: { userId: string; title: string; notes: string | null; repeat: string; reminderMinutes: number | null }) =>
-  JSON.stringify([item.userId, item.title, item.notes || '', item.repeat, item.reminderMinutes])
+const groupKey = (item: { userId: string; title: string; notes: string | null; repeat: string; reminderMinutes: number | null; customRepeatDays: number | null }) =>
+  JSON.stringify([item.userId, item.title, item.notes || '', item.repeat, item.reminderMinutes, item.customRepeatDays])
 
-const nextDate = (date: Date, repeat: Repeat) => {
+const nextDate = (date: Date, repeat: Repeat, customRepeatDays?: number | null) => {
   const next = new Date(date)
   if (repeat === 'daily') next.setUTCDate(next.getUTCDate() + 1)
   else if (repeat === 'weekly') next.setUTCDate(next.getUTCDate() + 7)
-  else next.setUTCMonth(next.getUTCMonth() + 1)
+  else if (repeat === 'monthly') next.setUTCMonth(next.getUTCMonth() + 1)
+  else if (repeat === 'custom' && customRepeatDays) next.setUTCDate(next.getUTCDate() + customRepeatDays)
   return next
 }
 
@@ -27,7 +28,7 @@ export async function ensureRecurringSchedules() {
   for (const latest of latestByGroup.values()) {
     const reminderAt = latest.startAt.getTime() - (latest.reminderMinutes ?? 0) * 60_000
     if (reminderAt > now) continue
-    const nextStart = nextDate(latest.startAt, latest.repeat as Repeat)
+    const nextStart = nextDate(latest.startAt, latest.repeat as Repeat, latest.customRepeatDays)
     const exists = await prisma.schedule.findFirst({
       where: {
         userId: latest.userId,
@@ -35,6 +36,7 @@ export async function ensureRecurringSchedules() {
         notes: latest.notes,
         repeat: latest.repeat,
         reminderMinutes: latest.reminderMinutes,
+        customRepeatDays: latest.customRepeatDays,
         startAt: nextStart,
       },
       select: { id: true },
@@ -50,6 +52,7 @@ export async function ensureRecurringSchedules() {
         notes: latest.notes,
         completed: false,
         repeat: latest.repeat,
+        customRepeatDays: latest.customRepeatDays,
         reminderMinutes: latest.reminderMinutes,
       },
     })
