@@ -417,8 +417,10 @@ app.register(async (api) => {
     return parseReceipt(body.images, body.source)
   })
   api.get('/v1/food-items', async (request) => {
+    const query = z.object({ search: z.string().trim().max(200).optional() }).parse(request.query || {})
     const page = pagination(request.query)
-    const where = { userId: userId(request) }
+    const where: { userId: string; name?: { contains: string } } = { userId: userId(request) }
+    if (query.search) where.name = { contains: query.search }
     const select = {
       id: true,
       name: true,
