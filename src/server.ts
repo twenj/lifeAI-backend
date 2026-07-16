@@ -365,7 +365,7 @@ app.register(async (api) => {
 
   api.get('/v1/schedules', async (request) => {
     const page = pagination(request.query)
-    const completedParam = request.query.completed
+    const completedParam = z.object({ completed: z.enum(['true', 'false']).optional() }).parse(request.query || {}).completed
     const where: Record<string, unknown> = { userId: userId(request) }
     if (completedParam === 'true') where.completed = true
     else if (completedParam === 'false') where.completed = false
