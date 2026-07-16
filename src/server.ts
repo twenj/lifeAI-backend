@@ -365,8 +365,12 @@ app.register(async (api) => {
 
   api.get('/v1/schedules', async (request) => {
     const page = pagination(request.query)
-    const where = { userId: userId(request) }
-    const [items, total] = await Promise.all([prisma.schedule.findMany({ where, orderBy: { startAt: 'asc' }, skip: page.skip, take: page.pageSize }), prisma.schedule.count({ where })])
+    const completedParam = request.query.completed
+    const where: Record<string, unknown> = { userId: userId(request) }
+    if (completedParam === 'true') where.completed = true
+    else if (completedParam === 'false') where.completed = false
+    const orderBy = completedParam === 'true' ? { updatedAt: 'desc' as const } : { startAt: 'asc' as const }
+    const [items, total] = await Promise.all([prisma.schedule.findMany({ where, orderBy, skip: page.skip, take: page.pageSize }), prisma.schedule.count({ where })])
     return pageResult(items, total, page.page, page.pageSize)
   })
   api.post('/v1/schedules', async (request, reply) => {
